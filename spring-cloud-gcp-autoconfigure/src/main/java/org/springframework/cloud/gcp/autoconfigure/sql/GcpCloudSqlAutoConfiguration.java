@@ -203,7 +203,7 @@ public class GcpCloudSqlAutoConfiguration {
 			}
 
 			System.setProperty(SslSocketFactory.USER_TOKEN_PROPERTY_NAME,
-					"spring-cloud-gcp-sql\\"
+					"spring-cloud-gcp-sql/"
 							+ this.getClass().getPackage().getImplementationVersion());
 
 			return properties;
