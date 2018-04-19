@@ -18,34 +18,43 @@ package org.springframework.cloud.gcp.autoconfigure.config.it;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.cloud.gcp.autoconfigure.config.GcpConfigBootstrapConfiguration;
 import org.springframework.cloud.gcp.autoconfigure.core.GcpContextAutoConfiguration;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
 /**
  * @author João André Martins
  */
+@SpringBootTest(properties = {
+		"spring.cloud.gcp.config.enabled=true",
+		"spring.cloud.gcp.config.name=myapp",
+		"spring.cloud.gcp.config.profile=prod"
+},
+classes = {GcpContextAutoConfiguration.class, GcpConfigBootstrapConfiguration.class})
 public class GcpConfigIntegrationTests {
-
-	private ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-			.withConfiguration(AutoConfigurations.of(GcpContextAutoConfiguration.class,
-					GcpConfigBootstrapConfiguration.class))
-			.withPropertyValues("spring.cloud.gcp.config.enabled=true",
-					"spring.cloud.gcp.config.name=myapp",
-					"spring.cloud.gcp.config.profile=prod");
 
 	@BeforeClass
 	public static void enableTests() {
 		assumeThat(System.getProperty("it.config")).isEqualTo("true");
 	}
 
+	@Value("${myapp.queue-size}")
+	private int queueSize;
+
+	@Value("${myapp.feature-x-enabled}")
+	private boolean isFeatureEnabled;
+
 	@Test
 	public void testConfiguration() {
-		this.contextRunner.run(context -> {
-
-		});
+		assertThat(this.queueSize).isEqualTo(200);
+		assertThat(this.isFeatureEnabled).isEqualTo(true);
 	}
 }
