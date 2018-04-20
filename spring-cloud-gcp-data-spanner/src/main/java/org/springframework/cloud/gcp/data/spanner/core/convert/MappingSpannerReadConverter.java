@@ -259,7 +259,7 @@ class MappingSpannerReadConverter extends AbstractSpannerCustomConverter
 			if (sourceType != null && canConvert(sourceType, targetType)) {
 				BiFunction readFunction = singleItemReadMethodMapping.get(ConversionUtils.boxIfNeeded(sourceType));
 				if (readFunction != null) {
-					result = convertIfNeeded(readFunction.apply(struct, columnName), targetType);
+					result = convert(readFunction.apply(struct, columnName), targetType);
 				}
 			}
 			return result;

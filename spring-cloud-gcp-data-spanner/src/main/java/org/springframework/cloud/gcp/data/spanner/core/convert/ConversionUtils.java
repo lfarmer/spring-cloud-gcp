@@ -243,7 +243,7 @@ public class ConversionUtils {
 	static Iterable convertIterable(Iterable source, Class targetType,
 			AbstractSpannerCustomConverter converter) {
 		return (Iterable) StreamSupport.stream(source.spliterator(), false)
-				.map(item -> converter.convertIfNeeded(item, targetType))
+				.map(item -> converter.convert(item, targetType))
 				.collect(Collectors.toList());
 
 	}

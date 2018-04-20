@@ -54,7 +54,7 @@ public abstract class AbstractSpannerCustomConverter {
 				|| this.conversionService.canConvert(boxedSourceType, boxedTargetType);
 	}
 
-	protected Object convertIfNeeded(Object source, Class targetType) {
+	protected Object convert(Object source, Class targetType) {
 		Class boxedTargetType = ConversionUtils.boxIfNeeded(targetType);
 		return (ConversionUtils.boxIfNeeded(source.getClass()).equals(boxedTargetType))
 				? source
