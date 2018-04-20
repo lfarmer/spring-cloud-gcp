@@ -105,4 +105,13 @@ public class TestEntities {
 		String value;
 	}
 
+	static class SimpleConstructorTester {
+		@PrimaryKey
+		final String id;
+
+		SimpleConstructorTester(String id) {
+			this.id = id;
+		}
+	}
+
 }

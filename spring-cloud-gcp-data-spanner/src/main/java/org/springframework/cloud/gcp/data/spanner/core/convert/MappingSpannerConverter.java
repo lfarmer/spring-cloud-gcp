@@ -151,7 +151,7 @@ public class MappingSpannerConverter extends AbstractSpannerCustomConverter
 
 	@Override
 	public Object convert(Object source, Class targetType) {
-		return super.convert(source, targetType);
+		return super.convertIfNeeded(source, targetType);
 	}
 
 	@Override

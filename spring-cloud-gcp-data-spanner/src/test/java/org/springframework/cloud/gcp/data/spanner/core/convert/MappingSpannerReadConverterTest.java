@@ -28,6 +28,7 @@ import org.junit.Test;
 
 import org.springframework.cloud.gcp.data.spanner.core.convert.TestEntities.FaultyTestEntity;
 import org.springframework.cloud.gcp.data.spanner.core.convert.TestEntities.OuterTestEntity;
+import org.springframework.cloud.gcp.data.spanner.core.convert.TestEntities.SimpleConstructorTester;
 import org.springframework.cloud.gcp.data.spanner.core.convert.TestEntities.TestEntity;
 import org.springframework.cloud.gcp.data.spanner.core.mapping.SpannerDataException;
 import org.springframework.cloud.gcp.data.spanner.core.mapping.SpannerMappingContext;
@@ -35,7 +36,9 @@ import org.springframework.core.convert.ConversionFailedException;
 import org.springframework.data.convert.CustomConversions;
 import org.springframework.data.convert.CustomConversions.StoreConversions;
 
+import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 
 /**
  * @author Chengyuan Zhao
@@ -100,4 +103,12 @@ public class MappingSpannerReadConverterTest {
 		this.readConverter.read(FaultyTestEntity.class, struct1);
 	}
 
+	@Test
+	public void shouldReadEntityWithNoDefaultConstructor() {
+		Struct row = Struct.newBuilder()
+				.add("id", Value.string("1234")).build();
+		SimpleConstructorTester result = this.readConverter.read(SimpleConstructorTester.class, row);
+
+		assertThat(result.id, is("1234"));
+	}
 }
