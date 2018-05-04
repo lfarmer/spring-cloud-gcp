@@ -1,0 +1,265 @@
+package org.springframework.cloud.gcp.data.store.repository.support;
+
+import com.google.cloud.datastore.Datastore;
+import com.google.cloud.datastore.DatastoreOptions;
+import com.google.cloud.datastore.Entity;
+import com.google.cloud.datastore.EntityQuery;
+import com.google.cloud.datastore.FullEntity;
+import com.google.cloud.datastore.IncompleteKey;
+import com.google.cloud.datastore.Key;
+import com.google.cloud.datastore.KeyFactory;
+import com.google.cloud.datastore.KeyQuery;
+import com.google.cloud.datastore.PathElement;
+import com.google.cloud.datastore.Query;
+import com.google.cloud.datastore.QueryResults;
+import com.google.cloud.datastore.StructuredQuery;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cloud.gcp.data.store.repository.DatastoreRepository;
+import org.springframework.data.repository.core.EntityInformation;
+import org.springframework.util.Assert;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
+
+public class SimpleDatastoreRepository<T, ID extends Serializable>
+        implements DatastoreRepository<T, ID> {
+
+    private static final Logger log = LoggerFactory
+            .getLogger(SimpleDatastoreRepository.class);
+
+    private static final int BUFFER_SIZE = 50;
+
+    DatastoreOptions datastoreOptions;
+
+    Marshaller marshaller = new Marshaller();
+    Unmarshaller unmarshaller = new Unmarshaller();
+
+    final EntityInformation<T, ID> entityInformation;
+    final String kind;
+
+    public SimpleDatastoreRepository(EntityInformation<T, ID> entityInformation,
+                                           DatastoreOptions datastoreOptions) {
+
+        Assert.notNull(entityInformation, "EntityInformation must not be null!");
+
+        this.entityInformation = entityInformation;
+        this.kind = entityInformation.getJavaType().getSimpleName();
+        this.datastoreOptions = datastoreOptions;
+    }
+
+    @Override
+    public long count() {
+        Datastore datastore = this.datastoreOptions.getService();
+        QueryResults<?> results = datastore.run(getAllKeyQuery());
+        long count = 0;
+        while (results.hasNext()) {
+            results.next();
+            count++;
+        }
+        return count;
+    }
+
+    @Override
+    public void deleteById(ID id) {
+        deleteKeys(Arrays.asList(getKey(id)));
+    }
+
+    @Override
+    public void delete(T entity) {
+        deleteAll(Arrays.asList(entity));
+    }
+
+    @Override
+    public void deleteAll(Iterable<? extends T> entities) {
+        deleteKeys(() -> {
+            Iterator<? extends T> entityIter = entities.iterator();
+            return new Iterator<Key>() {
+                @Override
+                public boolean hasNext() {
+                    return entityIter.hasNext();
+                }
+
+                @Override
+                public Key next() {
+                    T entity = entityIter.next();
+                    ID id = entityInformation.getId(entity);
+                    return getKey(id);
+                }
+            };
+        });
+    }
+
+    @Override
+    public void deleteAll() {
+        Datastore datastore = this.datastoreOptions.getService();
+        KeyQuery query = getAllKeyQuery();
+        deleteKeys(() -> datastore.run(query));
+    }
+
+    @Override
+    public Iterable<T> query(Query<Entity> query) {
+        Datastore datastore = this.datastoreOptions.getService();
+        QueryResults<Entity> results = datastore.run(query);
+        return () -> new Iterator<T>() {
+            @Override
+            public boolean hasNext() {
+                return results.hasNext();
+            }
+
+            @Override
+            public T next() {
+                try {
+                    T entity = entityInformation.getJavaType().newInstance();
+                    unmarshaller.unmarshalToObject(results.next(), entity);
+                    return entity;
+                }
+                catch (InstantiationException | IllegalAccessException e) {
+                    throw new IllegalStateException();
+                }
+            }
+        };
+    }
+
+    @Override
+    public Iterable<T> findAll() {
+        EntityQuery.Builder queryBuilder = Query.newEntityQueryBuilder()
+                .setKind(this.kind);
+        setAncestorFilter(queryBuilder);
+        EntityQuery query = queryBuilder.build();
+        log.debug(query.toString());
+
+        return query(query);
+    }
+
+    @Override
+    public Iterable<T> findAllById(Iterable<ID> ids) {
+        return () -> {
+            Iterator<ID> idIter = ids.iterator();
+            return new Iterator<T>() {
+                @Override
+                public boolean hasNext() {
+                    return idIter.hasNext();
+                }
+
+                @Override
+                public T next() {
+                    return findById(idIter.next()).get();
+                }
+            };
+        };
+    }
+
+    @Override
+    public <S extends T> S save(S entity) {
+        saveAll(Arrays.asList(entity));
+        return entity;
+    }
+
+    @Override
+    public <S extends T> Iterable<S> saveAll(Iterable<S> entities) {
+        Datastore datastore = this.datastoreOptions.getService();
+
+        List<FullEntity<? extends IncompleteKey>> buffer = new ArrayList<>();
+
+        for (S entity : entities) {
+            ID id = this.entityInformation.getId(entity);
+            Key key = getKey(id);
+
+            buffer.add(this.marshaller.toEntity(entity, key));
+            if (buffer.size() >= BUFFER_SIZE) {
+                datastore.put(buffer.toArray(new FullEntity[buffer.size()]));
+                buffer.clear();
+            }
+        }
+        if (buffer.size() > 0) {
+            datastore.put(buffer.toArray(new FullEntity[buffer.size()]));
+        }
+
+        return entities;
+    }
+
+    @Override
+    public Optional<T> findById(ID id) {
+        Datastore datastore = this.datastoreOptions.getService();
+        Entity entity = datastore.get(getKey(id));
+        if (entity == null) {
+            return Optional.empty();
+        }
+        else {
+            return Optional.of(this.unmarshaller.unmarshal(entity,
+                    this.entityInformation.getJavaType()));
+        }
+    }
+
+    @Override
+    public boolean existsById(ID id) {
+        return findById(id) != null;
+    }
+
+    private void deleteKeys(Iterable<Key> keys) {
+        Datastore datastore = this.datastoreOptions.getService();
+
+        List<Key> buffer = new ArrayList<>(BUFFER_SIZE);
+        for (Key key : keys) {
+            buffer.add(key);
+
+            if (buffer.size() >= BUFFER_SIZE) {
+                datastore.delete(buffer.toArray(new Key[buffer.size()]));
+                buffer.clear();
+            }
+        }
+        if (buffer.size() > 0) {
+            datastore.delete(buffer.toArray(new Key[buffer.size()]));
+        }
+    }
+
+    private <U> void setAncestorFilter(StructuredQuery.Builder<U> queryBuilder) {
+        Datastore datastore = datastoreOptions.getService();
+
+        Deque<PathElement> ancestors = Context.getAncestors();
+        Deque<PathElement> init = new LinkedList<>();
+        init.addAll(ancestors);
+        PathElement last = init.pollLast();
+
+        if (last != null) {
+            KeyFactory keyFactory = datastore.newKeyFactory();
+            keyFactory.addAncestors(init).setKind(last.getKind());
+            Key key = last.hasId() ? keyFactory.newKey(last.getId())
+                    : keyFactory.newKey(last.getName());
+            queryBuilder.setFilter(StructuredQuery.PropertyFilter.hasAncestor(key));
+        }
+    }
+
+    private KeyQuery getAllKeyQuery() {
+        KeyQuery.Builder queryBuilder = Query.newKeyQueryBuilder().setKind(this.kind);
+        setAncestorFilter(queryBuilder);
+        KeyQuery query = queryBuilder.build();
+        log.debug(query.toString());
+
+        return query;
+    }
+
+    private Key getKey(ID id) {
+        Datastore datastore = this.datastoreOptions.getService();
+
+        KeyFactory keyFactory = datastore.newKeyFactory().setKind(this.kind);
+        Iterable<PathElement> ancestors = Context.getAncestors();
+        keyFactory.addAncestors(ancestors);
+
+        Key key;
+        if (id instanceof Number) {
+            key = keyFactory.newKey(((Number) id).longValue());
+        }
+        else {
+            key = keyFactory.newKey(id.toString());
+        }
+        return key;
+    }
+}
